@@ -97,11 +97,11 @@ function getDoubanImageProxyConfig(): {
     const storedType = localStorage.getItem('doubanImageProxyType');
     const runtimeType = (window as any).RUNTIME_CONFIG?.DOUBAN_IMAGE_PROXY_TYPE;
 
-    // 自动修复：如果localStorage或RUNTIME_CONFIG是'direct'，自动改为'server'
+    // 自动修复：如果localStorage或RUNTIME_CONFIG是'direct'或'img3'，自动改为'server'
     let effectiveStoredType = storedType;
-    if (storedType === 'direct') {
+    if (storedType === 'direct' || storedType === 'img3') {
       effectiveStoredType = 'server';
-      // 自动更新localStorage，避免下次还是'direct'
+      // 自动更新localStorage，避免下次还是'direct'或'img3'
       localStorage.setItem('doubanImageProxyType', 'server');
     }
 
