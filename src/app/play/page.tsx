@@ -8,6 +8,7 @@ import { Heart, ChevronUp, Download, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import { useDownload } from '@/contexts/DownloadContext';
+import { useDanmu } from '@/hooks/useDanmu';
 import DownloadEpisodeSelector from '@/components/download/DownloadEpisodeSelector';
 import EpisodeSelector from '@/components/EpisodeSelector';
 import NetDiskSearchResults from '@/components/NetDiskSearchResults';
@@ -18,9 +19,17 @@ import VideoCard from '@/components/VideoCard';
 import CommentSection from '@/components/play/CommentSection';
 import DownloadButtons from '@/components/play/DownloadButtons';
 import FavoriteButton from '@/components/play/FavoriteButton';
+import NetDiskButton from '@/components/play/NetDiskButton';
+import CollapseButton from '@/components/play/CollapseButton';
 import BackToTopButton from '@/components/play/BackToTopButton';
 import LoadingScreen from '@/components/play/LoadingScreen';
 import VideoInfoSection from '@/components/play/VideoInfoSection';
+import VideoLoadingOverlay from '@/components/play/VideoLoadingOverlay';
+import WatchRoomSyncBanner from '@/components/play/WatchRoomSyncBanner';
+import SourceSwitchDialog from '@/components/play/SourceSwitchDialog';
+import OwnerChangeDialog from '@/components/play/OwnerChangeDialog';
+import VideoCoverDisplay from '@/components/play/VideoCoverDisplay';
+import PlayErrorDisplay from '@/components/play/PlayErrorDisplay';
 import artplayerPluginChromecast from '@/lib/artplayer-plugin-chromecast';
 import artplayerPluginLiquidGlass from '@/lib/artplayer-plugin-liquid-glass';
 import { ClientCache } from '@/lib/client-cache';
@@ -157,15 +166,6 @@ function PlayPageClient() {
   const [customAdFilterVersion, setCustomAdFilterVersion] = useState<number>(1);
   const customAdFilterCodeRef = useRef(customAdFilterCode);
 
-  // 外部弹幕开关（从 localStorage 继承，默认全部关闭）
-  const [externalDanmuEnabled, setExternalDanmuEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const v = localStorage.getItem('enable_external_danmu');
-      if (v !== null) return v === 'true';
-    }
-    return false; // 默认关闭外部弹幕
-  });
-  const externalDanmuEnabledRef = useRef(externalDanmuEnabled);
 
   // Anime4K超分相关状态
   const [webGPUSupported, setWebGPUSupported] = useState<boolean>(false);
@@ -336,6 +336,29 @@ function PlayPageClient() {
   const detailRef = useRef<SearchResult | null>(detail);
   const currentEpisodeIndexRef = useRef(currentEpisodeIndex);
 
+  // ArtPlayer ref
+  const artPlayerRef = useRef<any>(null);
+  const artRef = useRef<HTMLDivElement | null>(null);
+
+  // 🚀 使用 useDanmu Hook 管理弹幕
+  const {
+    externalDanmuEnabled,
+    setExternalDanmuEnabled,
+    loadExternalDanmu,
+    handleDanmuOperationOptimized,
+    externalDanmuEnabledRef,
+    danmuLoadingRef,
+    lastDanmuLoadKeyRef,
+    danmuPluginStateRef,
+  } = useDanmu({
+    videoTitle,
+    videoYear,
+    videoDoubanId,
+    currentEpisodeIndex,
+    currentSource,
+    artPlayerRef,
+  });
+
   // ✅ 合并所有 ref 同步的 useEffect - 减少不必要的渲染
   useEffect(() => {
     blockAdEnabledRef.current = blockAdEnabled;
@@ -369,11 +392,48 @@ function PlayPageClient() {
   useEffect(() => {
     const fetchAdFilterCode = async () => {
       try {
-        const response = await fetch('/api/ad-filter');
-        if (response.ok) {
-          const data = await response.json();
-          setCustomAdFilterCode(data.code || '');
-          setCustomAdFilterVersion(data.version || 1);
+        // 从缓存读取去广告代码和版本号
+        const cachedCode = localStorage.getItem('customAdFilterCode');
+        const cachedVersion = localStorage.getItem('customAdFilterVersion');
+
+        if (cachedCode && cachedVersion) {
+          setCustomAdFilterCode(cachedCode);
+          setCustomAdFilterVersion(parseInt(cachedVersion));
+          console.log('使用缓存的去广告代码');
+        }
+
+        // 从 window.RUNTIME_CONFIG 获取版本号
+        const version = (window as any).RUNTIME_CONFIG?.CUSTOM_AD_FILTER_VERSION || 0;
+
+        // 如果版本号为 0，说明去广告未设置，清空缓存并跳过
+        if (version === 0) {
+          localStorage.removeItem('customAdFilterCode');
+          localStorage.removeItem('customAdFilterVersion');
+          setCustomAdFilterCode('');
+          setCustomAdFilterVersion(0);
+          return;
+        }
+
+        // 如果缓存版本号与服务器版本号不一致，获取最新代码
+        if (!cachedVersion || parseInt(cachedVersion) !== version) {
+          console.log('检测到去广告代码更新（版本 ' + version + '），获取最新代码');
+
+          // 获取完整代码
+          const fullResponse = await fetch('/api/ad-filter?full=true');
+          if (!fullResponse.ok) {
+            console.warn('获取完整去广告代码失败，使用缓存');
+            return;
+          }
+
+          const { code, version: newVersion } = await fullResponse.json();
+
+          // 更新缓存和状态
+          localStorage.setItem('customAdFilterCode', code || '');
+          localStorage.setItem('customAdFilterVersion', String(newVersion || 0));
+          setCustomAdFilterCode(code || '');
+          setCustomAdFilterVersion(newVersion || 0);
+
+          console.log('去广告代码已更新到版本 ' + newVersion);
         }
       } catch (error) {
         console.error('获取自定义去广告代码失败:', error);
@@ -587,79 +647,6 @@ function PlayPageClient() {
     Map<string, { quality: string; loadSpeed: string; pingTime: number }>
   >(new Map());
 
-  // 弹幕缓存：避免重复请求相同的弹幕数据，支持页面刷新持久化（统一存储）
-  const DANMU_CACHE_DURATION = 30 * 60; // 30分钟缓存（秒）
-  const DANMU_CACHE_KEY_PREFIX = 'danmu-cache';
-  
-  // 获取单个弹幕缓存
-  const getDanmuCacheItem = async (key: string): Promise<{ data: any[]; timestamp: number } | null> => {
-    try {
-      const cacheKey = `${DANMU_CACHE_KEY_PREFIX}-${key}`;
-      // 优先从统一存储获取
-      const cached = await ClientCache.get(cacheKey);
-      if (cached) return cached;
-      
-      // 兜底：从localStorage获取（兼容性）
-      if (typeof localStorage !== 'undefined') {
-        const oldCacheKey = 'lunatv_danmu_cache';
-        const localCached = localStorage.getItem(oldCacheKey);
-        if (localCached) {
-          const parsed = JSON.parse(localCached);
-          const cacheMap = new Map(Object.entries(parsed));
-          const item = cacheMap.get(key) as { data: any[]; timestamp: number } | undefined;
-          if (item && typeof item.timestamp === 'number' && Date.now() - item.timestamp < DANMU_CACHE_DURATION * 1000) {
-            return item;
-          }
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      console.warn('读取弹幕缓存失败:', error);
-      return null;
-    }
-  };
-  
-  // 保存单个弹幕缓存
-  const setDanmuCacheItem = async (key: string, data: any[]): Promise<void> => {
-    try {
-      const cacheKey = `${DANMU_CACHE_KEY_PREFIX}-${key}`;
-      const cacheData = { data, timestamp: Date.now() };
-      
-      // 主要存储：统一存储
-      await ClientCache.set(cacheKey, cacheData, DANMU_CACHE_DURATION);
-      
-      // 兜底存储：localStorage（兼容性，但只存储最近几个）
-      if (typeof localStorage !== 'undefined') {
-        try {
-          const oldCacheKey = 'lunatv_danmu_cache';
-          let localCache: Map<string, { data: any[]; timestamp: number }> = new Map();
-          
-          const existing = localStorage.getItem(oldCacheKey);
-          if (existing) {
-            const parsed = JSON.parse(existing);
-            localCache = new Map(Object.entries(parsed)) as Map<string, { data: any[]; timestamp: number }>;
-          }
-          
-          // 清理过期项并限制数量（最多保留10个）
-          const now = Date.now();
-          const validEntries = Array.from(localCache.entries())
-            .filter(([, item]) => typeof item.timestamp === 'number' && now - item.timestamp < DANMU_CACHE_DURATION * 1000)
-            .slice(-9); // 保留9个，加上新的共10个
-            
-          validEntries.push([key, cacheData]);
-          
-          const obj = Object.fromEntries(validEntries);
-          localStorage.setItem(oldCacheKey, JSON.stringify(obj));
-        } catch (e) {
-          // localStorage可能满了，忽略错误
-        }
-      }
-    } catch (error) {
-      console.warn('保存弹幕缓存失败:', error);
-    }
-  };
-
   // 折叠状态（仅在 lg 及以上屏幕有效）
   const [isEpisodeSelectorCollapsed, setIsEpisodeSelectorCollapsed] =
     useState(false);
@@ -673,15 +660,9 @@ function PlayPageClient() {
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastSaveTimeRef = useRef<number>(0);
-  
-  // 弹幕加载状态管理，防止重复加载
-  const danmuLoadingRef = useRef<boolean>(false);
-  const lastDanmuLoadKeyRef = useRef<string>('');
 
-  // 🚀 新增：弹幕操作防抖和性能优化
-  const danmuOperationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // 🚀 连续切换源防抖和资源管理
   const episodeSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const danmuPluginStateRef = useRef<any>(null); // 保存弹幕插件状态
   const isSourceChangingRef = useRef<boolean>(false); // 标记是否正在换源
   const isEpisodeChangingRef = useRef<boolean>(false); // 标记是否正在切换集数
   const isSkipControllerTriggeredRef = useRef<boolean>(false); // 标记是否通过 SkipController 触发了下一集
@@ -691,9 +672,6 @@ function PlayPageClient() {
   const sourceSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingSwitchRef = useRef<any>(null); // 保存待处理的切换请求
   const switchPromiseRef = useRef<Promise<void> | null>(null); // 当前切换的Promise
-
-  const artPlayerRef = useRef<any>(null);
-  const artRef = useRef<HTMLDivElement | null>(null);
 
   // 播放器就绪状态
   const [playerReady, setPlayerReady] = useState(false);
@@ -1704,12 +1682,7 @@ function PlayPageClient() {
     // 先清理Anime4K，避免GPU纹理错误
     await cleanupAnime4K();
 
-    // 🚀 新增：清理弹幕优化相关的定时器
-    if (danmuOperationTimeoutRef.current) {
-      clearTimeout(danmuOperationTimeoutRef.current);
-      danmuOperationTimeoutRef.current = null;
-    }
-    
+    // 清理集数切换定时器
     if (episodeSwitchTimeoutRef.current) {
       clearTimeout(episodeSwitchTimeoutRef.current);
       episodeSwitchTimeoutRef.current = null;
@@ -2057,47 +2030,54 @@ function PlayPageClient() {
       }
     }
 
-    // 默认去广告逻辑
+    // 默认去广告规则
+    if (!m3u8Content) return '';
+
+    // 广告关键字列表
+    const adKeywords = [
+      'sponsor',
+      '/ad/',
+      '/ads/',
+      'advert',
+      'advertisement',
+      '/adjump',
+      'redtraffic'
+    ];
+
     // 按行分割M3U8内容
     const lines = m3u8Content.split('\n');
     const filteredLines = [];
-    let inAdBlock = false; // 是否在广告区块内
-    let adSegmentCount = 0; // 统计移除的广告片段数量
 
-    for (let i = 0; i < lines.length; i++) {
+    let i = 0;
+    while (i < lines.length) {
       const line = lines[i];
 
-      // 🎯 增强功能1: 检测行业标准广告标记（SCTE-35系列）
-      // 使用 line.includes() 保持与原逻辑一致，兼容各种格式
-      if (line.includes('#EXT-X-CUE-OUT') ||
-          (line.includes('#EXT-X-DATERANGE') && line.includes('SCTE35')) ||
-          line.includes('#EXT-X-SCTE35') ||
-          line.includes('#EXT-OATCLS-SCTE35')) {
-        inAdBlock = true;
-        adSegmentCount++;
-        continue; // 跳过广告开始标记
-      }
-
-      // 🎯 增强功能2: 检测广告结束标记
-      if (line.includes('#EXT-X-CUE-IN')) {
-        inAdBlock = false;
-        continue; // 跳过广告结束标记
-      }
-
-      // 🎯 增强功能3: 如果在广告区块内，跳过所有内容
-      if (inAdBlock) {
+      // 跳过 #EXT-X-DISCONTINUITY 标识
+      if (line.includes('#EXT-X-DISCONTINUITY')) {
+        i++;
         continue;
       }
 
-      // ✅ 原始逻辑保留: 过滤#EXT-X-DISCONTINUITY标识
-      if (!line.includes('#EXT-X-DISCONTINUITY')) {
-        filteredLines.push(line);
-      }
-    }
+      // 如果是 EXTINF 行，检查下一行 URL 是否包含广告关键字
+      if (line.includes('#EXTINF:')) {
+        // 检查下一行 URL 是否包含广告关键字
+        if (i + 1 < lines.length) {
+          const nextLine = lines[i + 1];
+          const containsAdKeyword = adKeywords.some(keyword =>
+            nextLine.toLowerCase().includes(keyword.toLowerCase())
+          );
 
-    // 输出统计信息
-    if (adSegmentCount > 0) {
-      console.log(`✅ M3U8广告过滤: 移除 ${adSegmentCount} 个广告片段`);
+          if (containsAdKeyword) {
+            // 跳过 EXTINF 行和 URL 行
+            i += 2;
+            continue;
+          }
+        }
+      }
+
+      // 保留当前行
+      filteredLines.push(line);
+      i++;
     }
 
     return filteredLines.join('\n');
@@ -2153,211 +2133,6 @@ function PlayPageClient() {
     }
   }
 
-  // 🚀 优化的弹幕操作处理函数（防抖 + 性能优化）
-  const handleDanmuOperationOptimized = (nextState: boolean) => {
-    // 清除之前的防抖定时器
-    if (danmuOperationTimeoutRef.current) {
-      clearTimeout(danmuOperationTimeoutRef.current);
-    }
-    
-    // 立即更新UI状态（确保响应性）
-    externalDanmuEnabledRef.current = nextState;
-    setExternalDanmuEnabled(nextState);
-    
-    // 同步保存到localStorage（快速操作）
-    try {
-      localStorage.setItem('enable_external_danmu', String(nextState));
-    } catch (e) {
-      console.warn('localStorage设置失败:', e);
-    }
-    
-    // 防抖处理弹幕数据操作（避免频繁切换时的性能问题）
-    danmuOperationTimeoutRef.current = setTimeout(async () => {
-      try {
-        if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
-          const plugin = artPlayerRef.current.plugins.artplayerPluginDanmuku;
-          
-          if (nextState) {
-            // 开启弹幕：使用更温和的加载方式
-            console.log('🚀 优化后开启外部弹幕...');
-            
-            // 使用requestIdleCallback优化性能（如果可用）
-            const loadDanmu = async () => {
-              const externalDanmu = await loadExternalDanmu();
-              // 二次确认状态，防止快速切换导致的状态不一致
-              if (externalDanmuEnabledRef.current && artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
-                plugin.load(externalDanmu);
-                plugin.show();
-                console.log('✅ 外部弹幕已优化加载:', externalDanmu.length, '条');
-                
-                if (artPlayerRef.current && externalDanmu.length > 0) {
-                  artPlayerRef.current.notice.show = `已加载 ${externalDanmu.length} 条弹幕`;
-                }
-              }
-            };
-            
-            // 使用 requestIdleCallback 或 setTimeout 来确保不阻塞主线程
-            if (typeof requestIdleCallback !== 'undefined') {
-              requestIdleCallback(loadDanmu, { timeout: 1000 });
-            } else {
-              setTimeout(loadDanmu, 50);
-            }
-          } else {
-            // 关闭弹幕：立即处理
-            console.log('🚀 优化后关闭外部弹幕...');
-            plugin.load(); // 不传参数，真正清空弹幕
-            plugin.hide();
-            console.log('✅ 外部弹幕已关闭');
-            
-            if (artPlayerRef.current) {
-              artPlayerRef.current.notice.show = '外部弹幕已关闭';
-            }
-          }
-        }
-      } catch (error) {
-        console.error('优化后弹幕操作失败:', error);
-      }
-    }, 300); // 300ms防抖延迟
-  };
-
-  // 加载外部弹幕数据（带缓存和防重复）
-  const loadExternalDanmu = async (): Promise<any[]> => {
-    if (!externalDanmuEnabledRef.current) {
-      console.log('外部弹幕开关已关闭');
-      return [];
-    }
-    
-    // 生成当前请求的唯一标识
-    const currentVideoTitle = videoTitle;
-    const currentVideoYear = videoYear; 
-    const currentVideoDoubanId = videoDoubanId;
-    const currentEpisodeNum = currentEpisodeIndex + 1;
-    const requestKey = `${currentVideoTitle}_${currentVideoYear}_${currentVideoDoubanId}_${currentEpisodeNum}`;
-    
-    // 🚀 优化加载状态检测：更智能的卡住检测
-    const now = Date.now();
-    const loadingState = danmuLoadingRef.current as any;
-    const lastLoadTime = loadingState?.timestamp || 0;
-    const lastRequestKey = loadingState?.requestKey || '';
-    const isStuckLoad = now - lastLoadTime > 15000; // 降低到15秒超时
-    const isSameRequest = lastRequestKey === requestKey;
-
-    // 智能重复检测：区分真正的重复和卡住的请求
-    if (loadingState?.loading && isSameRequest && !isStuckLoad) {
-      console.log('⏳ 弹幕正在加载中，跳过重复请求');
-      return [];
-    }
-
-    // 强制重置卡住的加载状态
-    if (isStuckLoad && loadingState?.loading) {
-      console.warn('🔧 检测到弹幕加载超时，强制重置 (15秒)');
-      danmuLoadingRef.current = false;
-    }
-
-    // 设置新的加载状态，包含更多上下文信息
-    danmuLoadingRef.current = {
-      loading: true,
-      timestamp: now,
-      requestKey,
-      source: currentSource,
-      episode: currentEpisodeNum
-    } as any;
-    lastDanmuLoadKeyRef.current = requestKey;
-    
-    try {
-      const params = new URLSearchParams();
-      
-      // 使用当前最新的state值而不是ref值
-      const currentVideoTitle = videoTitle;
-      const currentVideoYear = videoYear; 
-      const currentVideoDoubanId = videoDoubanId;
-      const currentEpisodeNum = currentEpisodeIndex + 1;
-      
-      if (currentVideoDoubanId && currentVideoDoubanId > 0) {
-        params.append('douban_id', currentVideoDoubanId.toString());
-      }
-      if (currentVideoTitle) {
-        params.append('title', currentVideoTitle);
-      }
-      if (currentVideoYear) {
-        params.append('year', currentVideoYear);
-      }
-      if (currentEpisodeIndex !== null && currentEpisodeIndex >= 0) {
-        params.append('episode', currentEpisodeNum.toString());
-      }
-
-      if (!params.toString()) {
-        console.log('没有可用的参数获取弹幕');
-        return [];
-      }
-
-      // 生成缓存键（使用state值确保准确性）
-      const cacheKey = `${currentVideoTitle}_${currentVideoYear}_${currentVideoDoubanId}_${currentEpisodeNum}`;
-      const now = Date.now();
-      
-      console.log('🔑 弹幕缓存调试信息:');
-      console.log('- 缓存键:', cacheKey);
-      console.log('- 当前时间:', now);
-      console.log('- 视频标题:', currentVideoTitle);
-      console.log('- 视频年份:', currentVideoYear);
-      console.log('- 豆瓣ID:', currentVideoDoubanId);
-      console.log('- 集数:', currentEpisodeNum);
-      
-      // 检查缓存
-      console.log('🔍 检查弹幕缓存:', cacheKey);
-      const cached = await getDanmuCacheItem(cacheKey);
-      if (cached) {
-        console.log('📦 找到缓存数据:');
-        console.log('- 缓存时间:', cached.timestamp);
-        console.log('- 时间差:', now - cached.timestamp, 'ms');
-        console.log('- 缓存有效期:', DANMU_CACHE_DURATION * 1000, 'ms');
-        console.log('- 是否过期:', (now - cached.timestamp) >= (DANMU_CACHE_DURATION * 1000));
-        
-        if ((now - cached.timestamp) < (DANMU_CACHE_DURATION * 1000)) {
-          console.log('✅ 使用弹幕缓存数据，缓存键:', cacheKey);
-          console.log('📊 缓存弹幕数量:', cached.data.length);
-          return cached.data;
-        }
-      } else {
-        console.log('❌ 未找到缓存数据');
-      }
-
-      console.log('开始获取外部弹幕，参数:', params.toString());
-      const response = await fetch(`/api/danmu-external?${params}`);
-      console.log('弹幕API响应状态:', response.status, response.statusText);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('弹幕API请求失败:', response.status, errorText);
-        return [];
-      }
-
-      const data = await response.json();
-      console.log('外部弹幕API返回数据:', data);
-      console.log('外部弹幕加载成功:', data.total || 0, '条');
-      
-      const finalDanmu = data.danmu || [];
-      console.log('最终弹幕数据:', finalDanmu.length, '条');
-      
-      // 缓存结果
-      console.log('💾 保存弹幕到统一存储:');
-      console.log('- 缓存键:', cacheKey);
-      console.log('- 弹幕数量:', finalDanmu.length);
-      console.log('- 保存时间:', now);
-      
-      // 保存到统一存储
-      await setDanmuCacheItem(cacheKey, finalDanmu);
-      
-      return finalDanmu;
-    } catch (error) {
-      console.error('加载外部弹幕失败:', error);
-      console.log('弹幕加载失败，返回空结果');
-      return [];
-    } finally {
-      // 重置加载状态
-      danmuLoadingRef.current = false;
-    }
-  };
 
   // 🚀 优化的集数变化处理（防抖 + 状态保护）
   useEffect(() => {
@@ -2854,11 +2629,7 @@ function PlayPageClient() {
       lastDanmuLoadKeyRef.current = '';
       danmuLoadingRef.current = false;
 
-      // 清除弹幕操作定时器
-      if (danmuOperationTimeoutRef.current) {
-        clearTimeout(danmuOperationTimeoutRef.current);
-        danmuOperationTimeoutRef.current = null;
-      }
+      // 清除集数切换定时器
       if (episodeSwitchTimeoutRef.current) {
         clearTimeout(episodeSwitchTimeoutRef.current);
         episodeSwitchTimeoutRef.current = null;
@@ -3056,9 +2827,6 @@ function PlayPageClient() {
   useEffect(() => {
     return () => {
       // 清理所有定时器
-      if (danmuOperationTimeoutRef.current) {
-        clearTimeout(danmuOperationTimeoutRef.current);
-      }
       if (episodeSwitchTimeoutRef.current) {
         clearTimeout(episodeSwitchTimeoutRef.current);
       }
@@ -5315,67 +5083,7 @@ function PlayPageClient() {
   if (error) {
     return (
       <PageLayout activePath='/play'>
-        <div className='flex items-center justify-center min-h-screen bg-transparent'>
-          <div className='text-center max-w-md mx-auto px-6'>
-            {/* 错误图标 */}
-            <div className='relative mb-8'>
-              <div className='relative mx-auto w-24 h-24 bg-linear-to-r from-red-500 to-orange-500 rounded-2xl shadow-2xl flex items-center justify-center transform hover:scale-105 transition-transform duration-300'>
-                <div className='text-white text-4xl'>😵</div>
-                {/* 脉冲效果 */}
-                <div className='absolute -inset-2 bg-linear-to-r from-red-500 to-orange-500 rounded-2xl opacity-20 animate-pulse'></div>
-              </div>
-
-              {/* 浮动错误粒子 */}
-              <div className='absolute top-0 left-0 w-full h-full pointer-events-none'>
-                <div className='absolute top-2 left-2 w-2 h-2 bg-red-400 rounded-full animate-bounce'></div>
-                <div
-                  className='absolute top-4 right-4 w-1.5 h-1.5 bg-orange-400 rounded-full animate-bounce'
-                  style={{ animationDelay: '0.5s' }}
-                ></div>
-                <div
-                  className='absolute bottom-3 left-6 w-1 h-1 bg-yellow-400 rounded-full animate-bounce'
-                  style={{ animationDelay: '1s' }}
-                ></div>
-              </div>
-            </div>
-
-            {/* 错误信息 */}
-            <div className='space-y-4 mb-8'>
-              <h2 className='text-2xl font-bold text-gray-800 dark:text-gray-200'>
-                哎呀，出现了一些问题
-              </h2>
-              <div className='bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4'>
-                <p className='text-red-600 dark:text-red-400 font-medium'>
-                  {error}
-                </p>
-              </div>
-              <p className='text-sm text-gray-500 dark:text-gray-400'>
-                请检查网络连接或尝试刷新页面
-              </p>
-            </div>
-
-            {/* 操作按钮 */}
-            <div className='space-y-3'>
-              <button
-                onClick={() =>
-                  videoTitle
-                    ? router.push(`/search?q=${encodeURIComponent(videoTitle)}`)
-                    : router.back()
-                }
-                className='w-full px-6 py-3 bg-linear-to-r from-green-500 to-emerald-600 text-white rounded-xl font-medium hover:from-green-600 hover:to-emerald-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl'
-              >
-                {videoTitle ? '🔍 返回搜索' : '← 返回上页'}
-              </button>
-
-              <button
-                onClick={() => window.location.reload()}
-                className='w-full px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200'
-              >
-                🔄 重新尝试
-              </button>
-            </div>
-          </div>
-        </div>
+        <PlayErrorDisplay error={error} videoTitle={videoTitle} />
       </PageLayout>
     );
   }
@@ -5400,44 +5108,14 @@ function PlayPageClient() {
           {/* 折叠控制 */}
           <div className='flex justify-end items-center gap-2 sm:gap-3'>
             {/* 网盘资源按钮 */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                // 触发网盘搜索（如果还没搜索过）
-                if (!netdiskResults && !netdiskLoading && videoTitle) {
-                  handleNetDiskSearch(videoTitle);
-                }
-                // 打开网盘模态框
-                setShowNetdiskModal(true);
-              }}
-              className='flex group relative items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 min-h-[40px] sm:min-h-[44px] rounded-2xl bg-linear-to-br from-white/90 via-white/80 to-white/70 hover:from-white hover:via-white/95 hover:to-white/90 dark:from-gray-800/90 dark:via-gray-800/80 dark:to-gray-800/70 dark:hover:from-gray-800 dark:hover:via-gray-800/95 dark:hover:to-gray-800/90 backdrop-blur-md border border-white/60 dark:border-gray-700/60 shadow-[0_2px_8px_rgba(0,0,0,0.04),inset_0_1px_0_rgba(255,255,255,0.25)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.3)] dark:hover:shadow-[0_4px_12px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.15)] hover:scale-105 active:scale-95 transition-all duration-300 overflow-hidden'
-              title='网盘资源'
-            >
-              <div className='absolute inset-0 bg-linear-to-r from-transparent via-white/0 to-transparent group-hover:via-white/30 dark:group-hover:via-white/10 transition-all duration-500'></div>
-              <span className='relative z-10 text-sm sm:text-base'>📁</span>
-              <span className='relative z-10 hidden sm:inline text-xs font-medium text-gray-600 dark:text-gray-300'>
-                {netdiskLoading ? (
-                  <span className='flex items-center gap-1'>
-                    <span className='inline-block h-3 w-3 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin'></span>
-                    搜索中
-                  </span>
-                ) : netdiskTotal > 0 ? (
-                  `网盘 (${netdiskTotal})`
-                ) : (
-                  '网盘'
-                )}
-              </span>
-
-              {/* 状态指示点 */}
-              {netdiskTotal > 0 && (
-                <div className='absolute -top-0.5 -right-0.5 z-20'>
-                  <div className='relative'>
-                    <div className='absolute inset-0 bg-blue-400 rounded-full blur-sm opacity-75 animate-pulse'></div>
-                    <div className='relative w-2 h-2 rounded-full bg-linear-to-br from-blue-400 to-blue-500 shadow-lg'></div>
-                  </div>
-                </div>
-              )}
-            </button>
+            <NetDiskButton
+              videoTitle={videoTitle}
+              netdiskLoading={netdiskLoading}
+              netdiskTotal={netdiskTotal}
+              netdiskResults={netdiskResults}
+              onSearch={handleNetDiskSearch}
+              onOpenModal={() => setShowNetdiskModal(true)}
+            />
 
             {/* 下载按钮 - 使用独立组件优化性能 */}
             <DownloadButtons
@@ -5447,42 +5125,10 @@ function PlayPageClient() {
             />
 
             {/* 折叠控制按钮 - 仅在 lg 及以上屏幕显示 */}
-            <button
-              onClick={() =>
-                setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
-              }
-              className='hidden lg:flex group relative items-center gap-2 px-4 py-2 min-h-[44px] rounded-2xl bg-linear-to-br from-white/90 via-white/80 to-white/70 hover:from-white hover:via-white/95 hover:to-white/90 dark:from-gray-800/90 dark:via-gray-800/80 dark:to-gray-800/70 dark:hover:from-gray-800 dark:hover:via-gray-800/95 dark:hover:to-gray-800/90 backdrop-blur-md border border-white/60 dark:border-gray-700/60 shadow-[0_2px_8px_rgba(0,0,0,0.04),inset_0_1px_0_rgba(255,255,255,0.25)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.3)] dark:hover:shadow-[0_4px_12px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.15)] hover:scale-105 active:scale-95 transition-all duration-300 overflow-hidden'
-              title={
-                isEpisodeSelectorCollapsed ? '显示选集面板' : '隐藏选集面板'
-              }
-            >
-              <div className='absolute inset-0 bg-linear-to-r from-transparent via-white/0 to-transparent group-hover:via-white/30 dark:group-hover:via-white/10 transition-all duration-500'></div>
-              <svg
-                className={`relative z-10 w-4 h-4 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${isEpisodeSelectorCollapsed ? 'rotate-180' : 'rotate-0'
-                  }`}
-                fill='none'
-                stroke='currentColor'
-                viewBox='0 0 24 24'
-              >
-                <path
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                  strokeWidth='2'
-                  d='M9 5l7 7-7 7'
-                />
-              </svg>
-              <span className='relative z-10 text-xs font-medium text-gray-600 dark:text-gray-300'>
-                {isEpisodeSelectorCollapsed ? '显示' : '隐藏'}
-              </span>
-
-              {/* 精致的状态指示点 */}
-              <div className='absolute -top-0.5 -right-0.5 z-20'>
-                <div className='relative'>
-                  <div className={`absolute inset-0 rounded-full blur-sm opacity-75 ${isEpisodeSelectorCollapsed ? 'bg-orange-400 animate-pulse' : 'bg-green-400'}`}></div>
-                  <div className={`relative w-2 h-2 rounded-full shadow-lg ${isEpisodeSelectorCollapsed ? 'bg-linear-to-br from-orange-400 to-orange-500' : 'bg-linear-to-br from-green-400 to-green-500'}`}></div>
-                </div>
-              </div>
-            </button>
+            <CollapseButton
+              isCollapsed={isEpisodeSelectorCollapsed}
+              onToggle={() => setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)}
+            />
           </div>
 
           <div
@@ -5505,32 +5151,7 @@ function PlayPageClient() {
                 {/* 跳过设置按钮 - 播放器内右上角 */}
                 {currentSource && currentId && (
                   <div className='absolute top-4 right-4 z-10'>
-                    <button
-                      onClick={() => setIsSkipSettingOpen(true)}
-                      className='group flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-xl border border-white/30 hover:border-white/50 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] hover:shadow-[0_8px_32px_0_rgba(255,255,255,0.18)] hover:scale-105 transition-all duration-300 ease-out'
-                      title='跳过设置'
-                      style={{
-                        backdropFilter: 'blur(20px) saturate(180%)',
-                        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-                      }}
-                    >
-                      <svg
-                        className='w-5 h-5 text-white drop-shadow-lg group-hover:rotate-90 transition-all duration-300'
-                        fill='none'
-                        stroke='currentColor'
-                        viewBox='0 0 24 24'
-                      >
-                        <path
-                          strokeLinecap='round'
-                          strokeLinejoin='round'
-                          strokeWidth={2}
-                          d='M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4'
-                        />
-                      </svg>
-                      <span className='text-sm font-medium text-white drop-shadow-lg transition-all duration-300 hidden sm:inline'>
-                        跳过设置
-                      </span>
-                    </button>
+                    <SkipSettingsButton onClick={() => setIsSkipSettingOpen(true)} />
                   </div>
                 )}
 
@@ -5551,42 +5172,10 @@ function PlayPageClient() {
                 )}
 
                 {/* 换源加载蒙层 */}
-                {isVideoLoading && (
-                  <div className='absolute inset-0 bg-black/85 backdrop-blur-sm rounded-xl flex items-center justify-center z-500 transition-all duration-300'>
-                    <div className='text-center max-w-md mx-auto px-6'>
-                      {/* 动画影院图标 */}
-                      <div className='relative mb-8'>
-                        <div className='relative mx-auto w-24 h-24 bg-linear-to-r from-green-500 to-emerald-600 rounded-2xl shadow-2xl flex items-center justify-center transform hover:scale-105 transition-transform duration-300'>
-                          <div className='text-white text-4xl'>🎬</div>
-                          {/* 旋转光环 */}
-                          <div className='absolute -inset-2 bg-linear-to-r from-green-500 to-emerald-600 rounded-2xl opacity-20 animate-spin'></div>
-                        </div>
-
-                        {/* 浮动粒子效果 */}
-                        <div className='absolute top-0 left-0 w-full h-full pointer-events-none'>
-                          <div className='absolute top-2 left-2 w-2 h-2 bg-green-400 rounded-full animate-bounce'></div>
-                          <div
-                            className='absolute top-4 right-4 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce'
-                            style={{ animationDelay: '0.5s' }}
-                          ></div>
-                          <div
-                            className='absolute bottom-3 left-6 w-1 h-1 bg-lime-400 rounded-full animate-bounce'
-                            style={{ animationDelay: '1s' }}
-                          ></div>
-                        </div>
-                      </div>
-
-                      {/* 换源消息 */}
-                      <div className='space-y-2'>
-                        <p className='text-xl font-semibold text-white animate-pulse'>
-                          {videoLoadingStage === 'sourceChanging'
-                            ? '🔄 切换播放源...'
-                            : '🔄 视频加载中...'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <VideoLoadingOverlay
+                  isVisible={isVideoLoading}
+                  loadingStage={videoLoadingStage}
+                />
               </div>
             </div>
 
@@ -5665,70 +5254,13 @@ function PlayPageClient() {
           />
 
           {/* 封面展示 */}
-          <div className='hidden md:block md:col-span-1 md:order-first'>
-            <div className='pl-0 py-4 pr-6'>
-              <div className='group relative bg-gray-300 dark:bg-gray-700 aspect-[2/3] flex items-center justify-center rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-500 hover:scale-[1.02]'>
-                {(videoCover || bangumiDetails?.images?.large) ? (
-                  <>
-                    {/* 渐变光泽动画层 */}
-                    <div
-                      className='absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none z-10'
-                      style={{
-                        background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.15) 45%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0.15) 55%, transparent 70%)',
-                        backgroundSize: '200% 100%',
-                        animation: 'shimmer 2.5s ease-in-out infinite',
-                      }}
-                    />
-
-                    <img
-                      src={processImageUrl(bangumiDetails?.images?.large || videoCover)}
-                      alt={videoTitle}
-                      className='w-full h-full object-cover transition-transform duration-500 group-hover:scale-105'
-                    />
-
-                    {/* 悬浮遮罩 */}
-                    <div className='absolute inset-0 bg-linear-to-t from-black/60 via-black/0 to-black/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500'></div>
-
-                    {/* 链接按钮（bangumi或豆瓣） */}
-                    {videoDoubanId !== 0 && (
-                      <a
-                        href={
-                          bangumiDetails
-                            ? `https://bgm.tv/subject/${videoDoubanId.toString()}`
-                            : `https://movie.douban.com/subject/${videoDoubanId.toString()}`
-                        }
-                        target='_blank'
-                        rel='noopener noreferrer'
-                        className='absolute top-3 left-3 z-20'
-                      >
-                        <div className={`relative ${bangumiDetails ? 'bg-linear-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600' : 'bg-linear-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600'} text-white text-xs font-bold w-10 h-10 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-300 ease-out hover:scale-110 group/link`}>
-                          <div className={`absolute inset-0 ${bangumiDetails ? 'bg-pink-400' : 'bg-green-400'} rounded-full opacity-0 group-hover/link:opacity-30 blur transition-opacity duration-300`}></div>
-                          <svg
-                            width='18'
-                            height='18'
-                            viewBox='0 0 24 24'
-                            fill='none'
-                            stroke='currentColor'
-                            strokeWidth='2'
-                            strokeLinecap='round'
-                            strokeLinejoin='round'
-                            className='relative z-10'
-                          >
-                            <path d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'></path>
-                            <path d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'></path>
-                          </svg>
-                        </div>
-                      </a>
-                    )}
-                  </>
-                ) : (
-                  <span className='text-gray-600 dark:text-gray-400'>
-                    封面图片
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
+          <VideoCoverDisplay
+            videoCover={videoCover}
+            bangumiDetails={bangumiDetails}
+            videoTitle={videoTitle}
+            videoDoubanId={videoDoubanId}
+            processImageUrl={processImageUrl}
+          />
         </div>
       </div>
 
@@ -5736,104 +5268,27 @@ function PlayPageClient() {
       <BackToTopButton show={showBackToTop} onClick={scrollToTop} />
 
       {/* 观影室同步暂停提示条 */}
-      {isInWatchRoom && !isWatchRoomOwner && syncPaused && !pendingOwnerChange && (
-        <div className='fixed bottom-20 left-1/2 -translate-x-1/2 z-9998 animate-fade-in'>
-          <div className='flex items-center gap-3 px-4 py-2.5 rounded-full bg-orange-500/90 backdrop-blur-sm shadow-lg'>
-            <span className='text-sm text-white font-medium'>已退出同步，自由观看中</span>
-            <button
-              onClick={resumeSync}
-              className='px-3 py-1 rounded-full bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors'
-            >
-              重新同步
-            </button>
-          </div>
-        </div>
-      )}
+      <WatchRoomSyncBanner
+        show={isInWatchRoom && !isWatchRoomOwner && syncPaused && !pendingOwnerChange}
+        onResumeSync={resumeSync}
+      />
 
       {/* 源切换确认对话框 */}
-      {showSourceSwitchDialog && pendingOwnerState && (
-        <div className='fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-9999'>
-          <div className='bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm mx-4 shadow-2xl'>
-            <div className='text-center'>
-              <div className='w-12 h-12 mx-auto mb-4 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center'>
-                <svg className='w-6 h-6 text-yellow-500' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
-                  <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' />
-                </svg>
-              </div>
-              <h3 className='text-lg font-semibold text-gray-900 dark:text-white mb-2'>
-                播放源不同
-              </h3>
-              <p className='text-sm text-gray-500 dark:text-gray-400 mb-3'>
-                房主使用的播放源与您不同，是否切换到房主的播放源？
-              </p>
-              <p className='text-base font-medium text-gray-900 dark:text-white mb-1'>
-                房主播放源
-              </p>
-              <p className='text-sm text-blue-500 dark:text-blue-400 mb-3 font-mono'>
-                {pendingOwnerState.source}
-              </p>
-              <p className='text-xs text-orange-500 dark:text-orange-400 mb-6'>
-                ⚠️ 保持当前源将无法与房主同步进度
-              </p>
-              <div className='flex gap-3'>
-                <button
-                  onClick={handleCancelSourceSwitch}
-                  className='flex-1 px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors font-medium'
-                >
-                  保持当前源
-                </button>
-                <button
-                  onClick={handleConfirmSourceSwitch}
-                  className='flex-1 px-4 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white transition-colors font-medium'
-                >
-                  切换源
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <SourceSwitchDialog
+        show={showSourceSwitchDialog && !!pendingOwnerState}
+        ownerSource={pendingOwnerState?.source || ''}
+        onConfirm={handleConfirmSourceSwitch}
+        onCancel={handleCancelSourceSwitch}
+      />
 
       {/* 房主切换视频/集数确认框 */}
-      {pendingOwnerChange && (
-        <div className='fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-9999'>
-          <div className='bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm mx-4 shadow-2xl'>
-            <div className='text-center'>
-              <div className='w-12 h-12 mx-auto mb-4 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center'>
-                <svg className='w-6 h-6 text-blue-500' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
-                  <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' />
-                </svg>
-              </div>
-              <h3 className='text-lg font-semibold text-gray-900 dark:text-white mb-2'>
-                房主切换了内容
-              </h3>
-              <p className='text-sm text-gray-500 dark:text-gray-400 mb-3'>
-                房主正在观看：
-              </p>
-              <p className='text-base font-medium text-gray-900 dark:text-white mb-1'>
-                {pendingOwnerChange.videoName || '未知视频'}
-              </p>
-              <p className='text-xs text-gray-500 dark:text-gray-400 mb-6'>
-                第 {(pendingOwnerChange.episode || 0) + 1} 集
-              </p>
-              <div className='flex gap-3'>
-                <button
-                  onClick={rejectFollowOwner}
-                  className='flex-1 px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors font-medium'
-                >
-                  自由观看
-                </button>
-                <button
-                  onClick={confirmFollowOwner}
-                  className='flex-1 px-4 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white transition-colors font-medium'
-                >
-                  跟随房主
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <OwnerChangeDialog
+        show={!!pendingOwnerChange}
+        videoName={pendingOwnerChange?.videoName || ''}
+        episode={pendingOwnerChange?.episode || 0}
+        onConfirm={confirmFollowOwner}
+        onReject={rejectFollowOwner}
+      />
       </PageLayout>
 
       {/* 网盘资源模态框 */}
@@ -5883,9 +5338,15 @@ function PlayPageClient() {
 
               {/* 资源类型切换器 - 仅当是动漫时显示 */}
               {(() => {
-                const isAnime = detail?.type_name?.toLowerCase().includes('动漫') ||
-                               detail?.type_name?.toLowerCase().includes('动画') ||
-                               detail?.type_name?.toLowerCase().includes('anime');
+                const typeName = detail?.type_name?.toLowerCase() || '';
+                const isAnime = typeName.includes('动漫') ||
+                               typeName.includes('动画') ||
+                               typeName.includes('anime') ||
+                               typeName.includes('番剧') ||
+                               typeName.includes('日剧') ||
+                               typeName.includes('韩剧');
+
+                console.log('[NetDisk] type_name:', detail?.type_name, 'isAnime:', isAnime);
 
                 return isAnime && (
                   <div className='flex items-center gap-2'>
