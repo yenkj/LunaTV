@@ -101,9 +101,9 @@ function getDoubanImageProxyConfig(): {
     // 自动修复：如果localStorage或RUNTIME_CONFIG是'direct'或'img3'，自动改为'server'
     let effectiveStoredType = storedType;
     if (storedType === 'direct' || storedType === 'img3') {
-      effectiveStoredType = 'server';
+      effectiveStoredType = 'cmliussss-cdn-tencent';
       // 自动更新localStorage，避免下次还是'direct'或'img3'
-      localStorage.setItem('doubanImageProxyType', 'server');
+      localStorage.setItem('doubanImageProxyType', 'cmliussss-cdn-tencent');
     }
 
     const effectiveRuntimeType = (runtimeType === 'direct') ? 'server' : runtimeType;
