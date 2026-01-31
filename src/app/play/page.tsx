@@ -5276,6 +5276,54 @@ function PlayPageClient() {
               onToggle={() => setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)}
             />
           </div>
+
+          <div
+            className={`grid gap-4 lg:h-[500px] xl:h-[650px] 2xl:h-[750px] transition-all duration-300 ease-in-out ${isEpisodeSelectorCollapsed
+              ? 'grid-cols-1'
+              : 'grid-cols-1 md:grid-cols-4'
+              }`}
+          >
+            {/* 播放器 */}
+            <div
+              className={`h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 ${isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
+                }`}
+            >
+              <div className='relative w-full h-[300px] lg:h-full'>
+                <div
+                  ref={artRef}
+                  className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
+                ></div>
+
+                {/* 跳过设置按钮 - 播放器内右上角 */}
+                {currentSource && currentId && (
+                  <div className='absolute top-4 right-4 z-10'>
+                    <SkipSettingsButton onClick={() => setIsSkipSettingOpen(true)} />
+                  </div>
+                )}
+
+                {/* SkipController 组件 */}
+                {currentSource && currentId && detail?.title && (
+                  <SkipController
+                    source={currentSource}
+                    id={currentId}
+                    title={detail.title}
+                    episodeIndex={currentEpisodeIndex}
+                    artPlayerRef={artPlayerRef}
+                    currentTime={currentPlayTime}
+                    duration={videoDuration}
+                    isSettingMode={isSkipSettingOpen}
+                    onSettingModeChange={setIsSkipSettingOpen}
+                    onNextEpisode={handleNextEpisode}
+                  />
+                )}
+
+                {/* 换源加载蒙层 */}
+                <VideoLoadingOverlay
+                  isVisible={isVideoLoading}
+                  loadingStage={videoLoadingStage}
+                />
+              </div>
+            </div>
 {/* 第三方应用打开按钮 */}  
 {videoUrl && (  
   <div className='mt-3 px-2 lg:flex-shrink-0'>  
@@ -5493,54 +5541,6 @@ function PlayPageClient() {
     </div>  
   </div>  
 )}
-          <div
-            className={`grid gap-4 lg:h-[500px] xl:h-[650px] 2xl:h-[750px] transition-all duration-300 ease-in-out ${isEpisodeSelectorCollapsed
-              ? 'grid-cols-1'
-              : 'grid-cols-1 md:grid-cols-4'
-              }`}
-          >
-            {/* 播放器 */}
-            <div
-              className={`h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 ${isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
-                }`}
-            >
-              <div className='relative w-full h-[300px] lg:h-full'>
-                <div
-                  ref={artRef}
-                  className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
-                ></div>
-
-                {/* 跳过设置按钮 - 播放器内右上角 */}
-                {currentSource && currentId && (
-                  <div className='absolute top-4 right-4 z-10'>
-                    <SkipSettingsButton onClick={() => setIsSkipSettingOpen(true)} />
-                  </div>
-                )}
-
-                {/* SkipController 组件 */}
-                {currentSource && currentId && detail?.title && (
-                  <SkipController
-                    source={currentSource}
-                    id={currentId}
-                    title={detail.title}
-                    episodeIndex={currentEpisodeIndex}
-                    artPlayerRef={artPlayerRef}
-                    currentTime={currentPlayTime}
-                    duration={videoDuration}
-                    isSettingMode={isSkipSettingOpen}
-                    onSettingModeChange={setIsSkipSettingOpen}
-                    onNextEpisode={handleNextEpisode}
-                  />
-                )}
-
-                {/* 换源加载蒙层 */}
-                <VideoLoadingOverlay
-                  isVisible={isVideoLoading}
-                  loadingStage={videoLoadingStage}
-                />
-              </div>
-            </div>
-
             {/* 选集和换源 - 在移动端始终显示，在 lg 及以上可折叠 */}
             <div
               className={`h-[300px] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${isEpisodeSelectorCollapsed
