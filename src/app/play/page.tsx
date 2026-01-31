@@ -5324,6 +5324,49 @@ function PlayPageClient() {
                 />
               </div>
             </div>
+
+            {/* 选集和换源 - 在移动端始终显示，在 lg 及以上可折叠 */}
+            <div
+              className={`h-[300px] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${isEpisodeSelectorCollapsed
+                ? 'md:col-span-1 lg:hidden lg:opacity-0 lg:scale-95'
+                : 'md:col-span-1 lg:opacity-100 lg:scale-100'
+                }`}
+            >
+              <EpisodeSelector
+                totalEpisodes={totalEpisodes}
+                episodes_titles={detail?.episodes_titles || []}
+                value={currentEpisodeIndex + 1}
+                onChange={handleEpisodeChange}
+                onSourceChange={handleSourceChange}
+                currentSource={currentSource}
+                currentId={currentId}
+                videoTitle={searchTitle || videoTitle}
+                availableSources={availableSources.filter(source => {
+                  // 必须有集数数据（所有源包括短剧源都必须满足）
+                  if (!source.episodes || source.episodes.length < 1) return false;
+
+                  // 短剧源不受集数差异限制（但必须有集数数据）
+                  if (source.source === 'shortdrama') return true;
+
+                  // 如果当前有 detail，只显示集数相近的源（允许 ±30% 的差异）
+                  if (detail && detail.episodes && detail.episodes.length > 0) {
+                    const currentEpisodes = detail.episodes.length;
+                    const sourceEpisodes = source.episodes.length;
+                    const tolerance = Math.max(5, Math.ceil(currentEpisodes * 0.3)); // 至少5集的容差
+
+                    // 在合理范围内
+                    return Math.abs(sourceEpisodes - currentEpisodes) <= tolerance;
+                  }
+
+                  return true;
+                })}
+                sourceSearchLoading={sourceSearchLoading}
+                sourceSearchError={sourceSearchError}
+                precomputedVideoInfo={precomputedVideoInfo}
+              />
+            </div>
+          </div>
+        </div>
 {/* 第三方应用打开按钮 */}  
 {videoUrl && (  
   <div className='mt-3 px-2 lg:flex-shrink-0'>  
@@ -5541,49 +5584,6 @@ function PlayPageClient() {
     </div>  
   </div>  
 )}
-            {/* 选集和换源 - 在移动端始终显示，在 lg 及以上可折叠 */}
-            <div
-              className={`h-[300px] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${isEpisodeSelectorCollapsed
-                ? 'md:col-span-1 lg:hidden lg:opacity-0 lg:scale-95'
-                : 'md:col-span-1 lg:opacity-100 lg:scale-100'
-                }`}
-            >
-              <EpisodeSelector
-                totalEpisodes={totalEpisodes}
-                episodes_titles={detail?.episodes_titles || []}
-                value={currentEpisodeIndex + 1}
-                onChange={handleEpisodeChange}
-                onSourceChange={handleSourceChange}
-                currentSource={currentSource}
-                currentId={currentId}
-                videoTitle={searchTitle || videoTitle}
-                availableSources={availableSources.filter(source => {
-                  // 必须有集数数据（所有源包括短剧源都必须满足）
-                  if (!source.episodes || source.episodes.length < 1) return false;
-
-                  // 短剧源不受集数差异限制（但必须有集数数据）
-                  if (source.source === 'shortdrama') return true;
-
-                  // 如果当前有 detail，只显示集数相近的源（允许 ±30% 的差异）
-                  if (detail && detail.episodes && detail.episodes.length > 0) {
-                    const currentEpisodes = detail.episodes.length;
-                    const sourceEpisodes = source.episodes.length;
-                    const tolerance = Math.max(5, Math.ceil(currentEpisodes * 0.3)); // 至少5集的容差
-
-                    // 在合理范围内
-                    return Math.abs(sourceEpisodes - currentEpisodes) <= tolerance;
-                  }
-
-                  return true;
-                })}
-                sourceSearchLoading={sourceSearchLoading}
-                sourceSearchError={sourceSearchError}
-                precomputedVideoInfo={precomputedVideoInfo}
-              />
-            </div>
-          </div>
-        </div>
-
         {/* 详情展示 */}
         <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
           {/* 文字区 - 使用独立组件优化性能 */}
