@@ -5319,9 +5319,8 @@ function PlayPageClient() {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL（与外部播放器逻辑一致）
-              const tokenParam = proxyToken ? `&token=${encodeURIComponent(proxyToken)}` : '';
               const proxyUrl = externalPlayerAdBlock
-                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}${tokenParam}`
+                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}`
                 : urlToUse;
 
               // 如果链接是相对路径，补充完整的 base URL
@@ -5377,9 +5376,8 @@ function PlayPageClient() {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
-              const tokenParam = proxyToken ? `&token=${encodeURIComponent(proxyToken)}` : '';
               const proxyUrl = externalPlayerAdBlock
-                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}${tokenParam}`
+                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}`
                 : urlToUse;
               // URL encode 避免冒号被吃掉
               window.open(`potplayer://${proxyUrl}`, '_blank');
@@ -5407,9 +5405,8 @@ function PlayPageClient() {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
-              const tokenParam = proxyToken ? `&token=${encodeURIComponent(proxyToken)}` : '';
               const proxyUrl = externalPlayerAdBlock
-                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}${tokenParam}`
+                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}`
                 : urlToUse;
               // URL encode 避免冒号被吃掉
               window.open(`vlc://${proxyUrl}`, '_blank');
@@ -5437,9 +5434,8 @@ function PlayPageClient() {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
-              const tokenParam = proxyToken ? `&token=${encodeURIComponent(proxyToken)}` : '';
               const proxyUrl = externalPlayerAdBlock
-                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}${tokenParam}`
+                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}`
                 : urlToUse;
               // URL encode 避免冒号被吃掉
               window.open(`mpv://${proxyUrl}`, '_blank');
@@ -5467,9 +5463,8 @@ function PlayPageClient() {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
-              const tokenParam = proxyToken ? `&token=${encodeURIComponent(proxyToken)}` : '';
               const proxyUrl = externalPlayerAdBlock
-                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}${tokenParam}`
+                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}`
                 : urlToUse;
               window.open(  
                 `intent://${proxyUrl}#Intent;package=com.mxtech.videoplayer.ad;S.title=${encodeURIComponent(
@@ -5501,9 +5496,8 @@ function PlayPageClient() {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
-              const tokenParam = proxyToken ? `&token=${encodeURIComponent(proxyToken)}` : '';
               const proxyUrl = externalPlayerAdBlock
-                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}${tokenParam}`
+                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}`
                 : urlToUse;
               window.open(`nplayer-${proxyUrl}`, '_blank');
             }}
@@ -5530,9 +5524,8 @@ function PlayPageClient() {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
-              const tokenParam = proxyToken ? `&token=${encodeURIComponent(proxyToken)}` : '';
               const proxyUrl = externalPlayerAdBlock
-                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}${tokenParam}`
+                ? `${window.location.origin}/api/proxy-m3u8?url=${encodeURIComponent(urlToUse)}&source=${encodeURIComponent(currentSource)}`
                 : urlToUse;
               window.open(
                 `iina://weblink?url=${encodeURIComponent(
