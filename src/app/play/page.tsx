@@ -5315,7 +5315,7 @@ function PlayPageClient() {
               e.preventDefault();
               // 如果当前是代理播放模式，使用原始 URL；否则使用当前 videoUrl
               let urlToUse = videoUrl;
-              if (sourceProxyMode && detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL（与外部播放器逻辑一致）
@@ -5373,7 +5373,7 @@ function PlayPageClient() {
               e.preventDefault();
               // 如果当前是代理播放模式，使用原始 URL；否则使用当前 videoUrl
               let urlToUse = videoUrl;
-              if (sourceProxyMode && detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
@@ -5403,7 +5403,7 @@ function PlayPageClient() {
               e.preventDefault();
               // 如果当前是代理播放模式，使用原始 URL；否则使用当前 videoUrl
               let urlToUse = videoUrl;
-              if (sourceProxyMode && detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
@@ -5433,7 +5433,7 @@ function PlayPageClient() {
               e.preventDefault();
               // 如果当前是代理播放模式，使用原始 URL；否则使用当前 videoUrl
               let urlToUse = videoUrl;
-              if (sourceProxyMode && detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
@@ -5463,7 +5463,7 @@ function PlayPageClient() {
               e.preventDefault();
               // 如果当前是代理播放模式，使用原始 URL；否则使用当前 videoUrl
               let urlToUse = videoUrl;  
-              if (sourceProxyMode && detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
@@ -5497,7 +5497,7 @@ function PlayPageClient() {
               e.preventDefault();
               // 如果当前是代理播放模式，使用原始 URL；否则使用当前 videoUrl
               let urlToUse = videoUrl;
-              if (sourceProxyMode && detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
@@ -5526,7 +5526,7 @@ function PlayPageClient() {
               e.preventDefault();
               // 如果当前是代理播放模式，使用原始 URL；否则使用当前 videoUrl
               let urlToUse = videoUrl;
-              if (sourceProxyMode && detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
                 urlToUse = detail.episodes[currentEpisodeIndex];
               }
               // 使用代理 URL
