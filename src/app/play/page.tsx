@@ -5286,7 +5286,7 @@ function PlayPageClient() {
           <button
             onClick={(e) => {
               e.preventDefault();
-              setShowDownloadSelector(true);
+              setShowDownloadEpisodeSelector(true);
             }}
             className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-green-400 flex-shrink-0'
             title='下载视频'
