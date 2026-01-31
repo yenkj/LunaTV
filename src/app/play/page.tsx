@@ -5579,9 +5579,6 @@ function PlayPageClient() {
                 sourceSearchLoading={sourceSearchLoading}
                 sourceSearchError={sourceSearchError}
                 precomputedVideoInfo={precomputedVideoInfo}
-                onShowToast={(message, type) => {
-                  setToast({ message, type, onClose: () => setToast(null) });
-                }}
               />
             </div>
           </div>
