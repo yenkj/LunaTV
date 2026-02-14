@@ -35,6 +35,7 @@ import SourceSwitchDialog from '@/components/play/SourceSwitchDialog';
 import OwnerChangeDialog from '@/components/play/OwnerChangeDialog';
 import VideoCoverDisplay from '@/components/play/VideoCoverDisplay';
 import PlayErrorDisplay from '@/components/play/PlayErrorDisplay';
+import Toast, { ToastProps } from '@/components/play/Toast';
 import DanmuSettingsPanel from '@/components/play/DanmuSettingsPanel';
 import WebSRSettingsPanel from '@/components/play/WebSRSettingsPanel';
 import artplayerPluginChromecast from '@/lib/artplayer-plugin-chromecast';
@@ -90,6 +91,7 @@ function PlayPageClient() {
   const searchParams = useSearchParams();
   const { createTask, setShowDownloadPanel } = useDownload();
   const watchRoom = useWatchRoomContextSafe();
+  const [toast, setToast] = useState<ToastProps | null>(null)
 
   // TanStack Query mutations
   const savePlayRecordMutation = useSavePlayRecordMutation();
@@ -5302,10 +5304,11 @@ function PlayPageClient() {
               className={`h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 ${isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
                 }`}
             >
-              <div className='relative w-full h-[300px] lg:h-full'>
+              <div className='relative w-full h-[300px] lg:h-full flex flex-col'>
+              <div className='relative flex-1 min-h-0'>
                 <div
                   ref={artRef}
-                  className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
+                  className='bg-black w-full h-full rounded-t-xl overflow-hidden shadow-lg'
                 ></div>
 
                 {/* WebSR 分屏对比分割线 */}
@@ -5385,7 +5388,225 @@ function PlayPageClient() {
                   loadingStage={videoLoadingStage}
                 />
               </div>
-            </div>
+{/* 第三方应用打开按钮 */}
+{videoUrl && (
+  <div className='lg:flex-shrink-0'>
+    <div className='bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-b-xl p-2 border-t border-white/10 dark:border-gray-700/50 w-full lg:w-auto overflow-x-auto no-scrollbar'>
+      <div className='flex gap-1.5 flex-nowrap lg:flex-wrap items-center'>
+        <div className='flex gap-1.5 flex-nowrap lg:flex-wrap lg:justify-end lg:flex-1'>
+          {/* 复制视频链接按钮 */}
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              // 使用当前集数的 URL
+              let urlToUse = videoUrl;
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+                urlToUse = detail.episodes[currentEpisodeIndex];
+              }
+
+              // 如果链接是相对路径，补充完整的 base URL
+              let finalUrl = urlToUse;
+              if (urlToUse && !urlToUse.startsWith('http://') && !urlToUse.startsWith('https://')) {
+                finalUrl = `${window.location.origin}${urlToUse.startsWith('/') ? '' : '/'}${urlToUse}`;
+              }
+
+              // 复制到剪贴板
+              navigator.clipboard.writeText(finalUrl).then(() => {
+                setToast({
+                  message: '视频链接已复制到剪贴板',
+                  type: 'success',
+                  onClose: () => setToast(null),
+                });
+              }).catch((err) => {
+                console.error('复制失败:', err);
+                setToast({
+                  message: '复制失败，请重试',
+                  type: 'error',
+                  onClose: () => setToast(null),
+                });
+              });
+            }}
+            className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-blue-400 flex-shrink-0'
+            title='复制视频链接'
+          >
+            <svg
+              className='w-4 h-4 flex-shrink-0 text-white'
+              fill='none'
+              stroke='currentColor'
+              viewBox='0 0 24 24'
+            >
+              <path
+                strokeLinecap='round'
+                strokeLinejoin='round'
+                strokeWidth='2'
+                d='M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z'
+              />
+            </svg>
+            <span className='hidden lg:inline max-w-0 group-hover:max-w-[100px] overflow-hidden whitespace-nowrap transition-all duration-200 ease-in-out text-white'>
+              复制链接
+            </span>
+          </button>
+
+          {/* PotPlayer */}
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              // 使用当前集数的 URL
+              let urlToUse = videoUrl;
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+                urlToUse = detail.episodes[currentEpisodeIndex];
+              }
+              window.open(`potplayer://${urlToUse}`, '_blank');
+            }}
+            className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-gray-300 dark:border-gray-600 flex-shrink-0'
+            title='PotPlayer'
+          >
+            <img
+              src='/players/potplayer.png'
+              alt='PotPlayer'
+              className='w-4 h-4 flex-shrink-0'
+            />
+            <span className='hidden lg:inline max-w-0 group-hover:max-w-[100px] overflow-hidden whitespace-nowrap transition-all duration-200 ease-in-out text-gray-700 dark:text-gray-200'>  
+              PotPlayer
+            </span>
+          </button>
+
+          {/* VLC */}
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              // 使用当前集数的 URL
+              let urlToUse = videoUrl;
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+                urlToUse = detail.episodes[currentEpisodeIndex];
+              }
+              window.open(`vlc://${urlToUse}`, '_blank');
+            }}
+            className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-gray-300 dark:border-gray-600 flex-shrink-0'
+            title='VLC'
+          >
+            <img
+              src='/players/vlc.png'
+              alt='VLC'
+              className='w-4 h-4 flex-shrink-0'
+            />
+            <span className='hidden lg:inline max-w-0 group-hover:max-w-[100px] overflow-hidden whitespace-nowrap transition-all duration-200 ease-in-out text-gray-700 dark:text-gray-200'>
+              VLC
+            </span>
+          </button>
+
+          {/* MPV */}
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              // 使用当前集数的 URL
+              let urlToUse = videoUrl;
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+                urlToUse = detail.episodes[currentEpisodeIndex];
+              }
+              window.open(`mpv://${urlToUse}`, '_blank');
+            }}
+            className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-gray-300 dark:border-gray-600 flex-shrink-0'
+            title='MPV'
+          >
+            <img
+              src='/players/mpv.png'
+              alt='MPV'
+              className='w-4 h-4 flex-shrink-0'
+            />
+            <span className='hidden lg:inline max-w-0 group-hover:max-w-[100px] overflow-hidden whitespace-nowrap transition-all duration-200 ease-in-out text-gray-700 dark:text-gray-200'>
+              MPV
+            </span>
+          </button>
+
+          {/* MX Player */}
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              // 使用当前集数的 URL
+              let urlToUse = videoUrl;
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+                urlToUse = detail.episodes[currentEpisodeIndex];
+              }
+              window.open(
+                `intent://${urlToUse}#Intent;package=com.mxtech.videoplayer.ad;S.title=${encodeURIComponent(
+                  videoTitle
+                )};end`,
+                '_blank'
+              );
+            }}
+            className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-gray-300 dark:border-gray-600 flex-shrink-0'
+            title='MX Player'
+          >
+            <img
+              src='/players/mxplayer.png'
+              alt='MX Player'
+              className='w-4 h-4 flex-shrink-0'
+            />
+            <span className='hidden lg:inline max-w-0 group-hover:max-w-[100px] overflow-hidden whitespace-nowrap transition-all duration-200 ease-in-out text-gray-700 dark:text-gray-200'>
+              MX Player
+            </span>
+          </button>
+
+          {/* nPlayer */}
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              // 使用当前集数的 URL
+              let urlToUse = videoUrl;
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+                urlToUse = detail.episodes[currentEpisodeIndex];
+              }
+              window.open(`nplayer-${urlToUse}`, '_blank');
+            }}
+            className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-gray-300 dark:border-gray-600 flex-shrink-0'
+            title='nPlayer'
+          >
+            <img
+              src='/players/nplayer.png'
+              alt='nPlayer'
+              className='w-4 h-4 flex-shrink-0'
+            />
+            <span className='hidden lg:inline max-w-0 group-hover:max-w-[100px] overflow-hidden whitespace-nowrap transition-all duration-200 ease-in-out text-gray-700 dark:text-gray-200'>
+              nPlayer
+            </span>
+          </button>
+
+          {/* IINA */}
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              // 使用当前集数的 URL
+              let urlToUse = videoUrl;
+              if (detail?.episodes && currentEpisodeIndex < detail.episodes.length) {
+                urlToUse = detail.episodes[currentEpisodeIndex];
+              }
+              window.open(
+                `iina://weblink?url=${encodeURIComponent(
+                  urlToUse
+                )}`,
+                '_blank'
+              );
+            }}
+            className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-gray-300 dark:border-gray-600 flex-shrink-0'
+            title='IINA'
+          >
+            <img
+              src='/players/iina.png'
+              alt='IINA'
+              className='w-4 h-4 flex-shrink-0'
+            />
+            <span className='hidden lg:inline max-w-0 group-hover:max-w-[100px] overflow-hidden whitespace-nowrap transition-all duration-200 ease-in-out text-gray-700 dark:text-gray-200'>
+              IINA
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+  </div>
+</div>
 
             {/* 选集和换源 - 在移动端始终显示，在 lg 及以上可折叠 */}
             <div
@@ -5869,6 +6090,9 @@ function PlayPageClient() {
           </div>
         </div>
       )}
+
+      {/* Toast通知 */}
+      {toast && <Toast {...toast} />}
 
       {/* 下载选集面板 */}
       <DownloadEpisodeSelector
