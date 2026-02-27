@@ -1,4 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+function generatePlaySessionId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID().replace(/-/g, '')
+    : Math.random().toString(36).slice(2, 18) + Date.now().toString(36);
+}
 
 interface EmbyConfig {
   ServerURL: string;
@@ -529,7 +534,8 @@ export class EmbyClient {
         // 使用 HLS 端点并强制音频转码为 AAC，避免 EAC3/TrueHD 兼容性问题
         url = `${this.serverUrl}/Videos/${itemId}/master.m3u8?api_key=${token}&AudioCodec=aac&AudioBitrate=320000&MaxAudioChannels=6&PlaySessionId=${playSessionId}`;
       } else {
-        url = `${this.serverUrl}/Videos/${itemId}/stream?Static=true&api_key=${token}`;
+        const playSessionId = generatePlaySessionId();  
+        url = `${this.serverUrl}/Videos/${itemId}/master.m3u8?api_key=${token}&DeviceId=efd03a05-f87b-48ec-9e35-78bf5a1ed1e8&PlaySessionId=${playSessionId}&AudioCodec=mp3,aac`;
       }
 
       // 选项2: 拼接MediaSourceId参数
@@ -544,7 +550,8 @@ export class EmbyClient {
         }
       }
     } else {
-      url = `${this.serverUrl}/Videos/${itemId}/master.m3u8?api_key=${token}`;
+      const playSessionId = generatePlaySessionId();
+      url = `${this.serverUrl}/Videos/${itemId}/master.m3u8?api_key=${token}&DeviceId=efd03a05-f87b-48ec-9e35-78bf5a1ed1e8&PlaySessionId=${playSessionId}&AudioCodec=mp3,aac`;
     }
 
     return url;
