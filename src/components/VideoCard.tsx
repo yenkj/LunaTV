@@ -66,6 +66,10 @@ export type VideoCardHandle = {
   setDoubanId: (id?: number) => void;
 };
 
+// Module-level cache: tracks poster URLs already loaded by the browser.
+// Survives VirtuosoGrid remount cycles so re-entering items skip the skeleton.
+const loadedImageUrls = new Set<string>();
+
 const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard(
   {
     id,
@@ -102,7 +106,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
 
   const [favorited, setFavorited] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false); // 图片加载状态
+  const [imageLoaded, setImageLoaded] = useState(() =>
+    loadedImageUrls.has(processImageUrl(poster))
+  ); // 图片加载状态
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [searchFavorited, setSearchFavorited] = useState<boolean | null>(null); // 搜索结果的收藏状态
   const [showAIChat, setShowAIChat] = useState(false); // AI问片弹窗
@@ -836,6 +842,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
             priority={priority}
             quality={75}
             onLoadingComplete={() => {
+              loadedImageUrls.add(processImageUrl(actualPoster));
               setIsLoading(true);
               setImageLoaded(true);
             }}
