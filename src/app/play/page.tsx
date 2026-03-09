@@ -36,7 +36,6 @@ import SourceSwitchDialog from '@/components/play/SourceSwitchDialog';
 import OwnerChangeDialog from '@/components/play/OwnerChangeDialog';
 import VideoCoverDisplay from '@/components/play/VideoCoverDisplay';
 import PlayErrorDisplay from '@/components/play/PlayErrorDisplay';
-import Toast, { ToastProps } from '@/components/play/Toast';
 import DanmuSettingsPanel from '@/components/play/DanmuSettingsPanel';
 import WebSRSettingsPanel from '@/components/play/WebSRSettingsPanel';
 import artplayerPluginChromecast from '@/lib/artplayer-plugin-chromecast';
@@ -92,7 +91,6 @@ function PlayPageClient() {
   const searchParams = useSearchParams();
   const { createTask, setShowDownloadPanel } = useDownload();
   const watchRoom = useWatchRoomContextSafe();
-  const [toast, setToast] = useState<ToastProps | null>(null)
 
   // TanStack Query mutations
   const savePlayRecordMutation = useSavePlayRecordMutation();
@@ -5495,18 +5493,10 @@ function PlayPageClient() {
 
               // 复制到剪贴板
               navigator.clipboard.writeText(finalUrl).then(() => {
-                setToast({
-                  message: '视频链接已复制到剪贴板',
-                  type: 'success',
-                  onClose: () => setToast(null),
-                });
+                toast.success('视频链接已复制到剪贴板');
               }).catch((err) => {
                 console.error('复制失败:', err);
-                setToast({
-                  message: '复制失败，请重试',
-                  type: 'error',
-                  onClose: () => setToast(null),
-                });
+                toast.error('复制失败，请重试');
               });
             }}
             className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-blue-400 flex-shrink-0'
@@ -6173,9 +6163,6 @@ function PlayPageClient() {
           </div>
         </div>
       )}
-
-      {/* Toast通知 */}
-      {toast && <Toast {...toast} />}
 
       {/* 下载选集面板 */}
       <DownloadEpisodeSelector
