@@ -1,0 +1,27 @@
+name: Cleanup Untagged Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_name:
+        description: '要清理的镜像名称 (例如: lunatv 或 openlist)'
+        required: true
+        default: 'lunatv'
+        type: string
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete untagged versions
+        uses: actions/delete-package-versions@v5
+        with:
+          # 使用你在手动触发时输入的镜像名
+          package-name: ${{ github.event.inputs.package_name }}
+          package-type: 'container'
+          # 只删除没有 Tag 的版本 (那些烦人的 sha256)
+          delete-only-untagged-versions: 'true'
+          # 设置为 0 表示一个不留，全部清空
+          min-versions-to-keep: 0
