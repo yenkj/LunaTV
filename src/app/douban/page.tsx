@@ -116,11 +116,9 @@ const doubanListOptions = (
   },
   initialPageParam: 0,
   getNextPageParam: (lastPage, allPages) => {
-    // 如果返回的数据少于 PAGE_SIZE，说明没有更多数据了
-    if (lastPage.list.length < PAGE_SIZE) {
+    if (!lastPage?.list || lastPage.list.length < PAGE_SIZE) {
       return undefined;
     }
-    // 如果返回的数据等于 PAGE_SIZE，可能还有更多数据
     return allPages.length;
   },
   enabled: !!type,
@@ -508,6 +506,7 @@ function DoubanPageClient() {
                   estimateRowHeight={320}
                   endReached={handleEndReached}
                   endReachedThreshold={3}
+                  restoreKey={`douban:${type}:${primarySelection}:${secondarySelection}:${selectedWeekday}:${JSON.stringify(multiLevelValues)}`}
                   renderItem={(item, index) => {
                     const mappedType = type === 'movie' ? 'movie' : type === 'show' ? 'variety' : type === 'tv' ? 'tv' : type === 'anime' ? 'anime' : '';
                     return (
