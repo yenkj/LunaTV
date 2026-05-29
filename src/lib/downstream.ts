@@ -95,7 +95,14 @@ async function searchWithCache(
               if (url.match(/\.(m3u8|mkv|mp4|avi|flv|webm|mov)(\?.*)?$/i)) {
                 matchTitles.push(episode_title_url[0]);
                 matchEpisodes.push(url);
-                }
+              }
+            } else if (
+              episode_title_url.length === 1 &&
+              episode_title_url[0].match(/\.(m3u8|mkv|mp4|avi|flv|webm|mov)(\?.*)?$/i)
+            ) {
+              // 纯链接格式：https://xxx.m3u8（无标题信息）
+              matchTitles.push(`第${matchEpisodes.length + 1}集`);
+              matchEpisodes.push(episode_title_url[0]);
             }
           });
           if (matchEpisodes.length > episodes.length) {
@@ -525,7 +532,7 @@ export async function getDetailFromApi(
           if (url.match(/\.(m3u8|mkv|mp4|avi|flv|webm|mov)(\?.*)?$/i)) {
             matchTitles.push(episode_title_url[0]);
             matchEpisodes.push(url);
-            }
+          }
         }
       });
       if (matchEpisodes.length > episodes.length) {
